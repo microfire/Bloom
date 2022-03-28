@@ -1,0 +1,279 @@
+<?php
+
+/**
+ * @file
+ * Install and uninstall functions for the bloom module.
+ * Arturs Nīmanis. 2022. marts.
+ */
+
+/**
+ * Implements hook_schema().
+ */
+// function bloom_schema() {
+// 	$schema['bloom_events'] = array(
+// 	);
+// 	return $schema;
+// }
+
+
+/**
+ * Implements hook_install().
+ */
+function bloom_install() {
+	// create taxonomy items
+	_bloom_init_bloom_vocabulary();
+
+	// add nodetype with newsletter vocabulary
+	_bloom_install_nodetype();
+}
+
+
+/**
+ * Implements hook_uninstall().
+ */
+function bloom_uninstall() {
+	// Remove fields and instances
+	$node_type = 'bloom';
+	$instances = field_info_instances('node', $node_type);
+	foreach ($instances as $instance_name => $instance) {
+		field_delete_instance($instance);
+	}
+	$instances = field_info_instances('node', $node_type);
+	foreach ($instances as $instance_name => $instance) {
+		field_delete_field($instance);
+	}
+	// Remove nodes
+	$result= db_query("SELECT nid FROM {node} AS n WHERE n.type = '$node_type'");
+	foreach ($result as $record) {
+		node_delete($record->nid);
+	}
+	// Remove node type
+	node_type_delete($node_type);
+
+
+	// Remove taxonomy
+	$vid = db_query('SELECT vid FROM {taxonomy_vocabulary} WHERE machine_name = :type', array(':type' => 'bloom_type'))->fetchField();
+	$terms = taxonomy_get_tree($vid);
+	if ($terms) {
+		foreach ($terms as $key => $tid) {
+			taxonomy_term_delete($tid->tid);
+		}
+	}
+	// Delete vocabulary.
+	taxonomy_vocabulary_delete($vid);
+
+
+	// Remove variables
+	// variable_del('bloom_type_vid'); // taxonomy vid
+	// variable_del('bloom_content_type_bloom');
+	db_query("DELETE FROM {variable} WHERE name LIKE 'bloom_%%'");
+
+
+	// Rebuild database cache of node types.
+	node_types_rebuild();
+	// Rebuild database cache of menus.
+	menu_rebuild();
+}
+
+/**
+ * Create Bloom node type.
+ */
+function _bloom_install_nodetype() {
+	// Create a Bloom type if not exist.
+	$type = node_type_get_type('bloom');
+	if (!$type) {
+		$type = node_type_set_defaults(array(
+			'type' => 'bloom',
+			'name' => t('Bloom Events'),
+			'base' => 'node_content',
+			'description' => t('A Bloom events to be sent to participants email addresses.'),
+			'locked' => 0,
+			'custom' => 1,
+			'modified' => 1,
+			'comment' => COMMENT_NODE_CLOSED, // COMMENT_NODE_HIDDEN, COMMENT_NODE_OPEN ??? Not working?
+			'title_label' => t('Event Title'),
+		));
+		node_type_save($type);
+		node_add_body_field($type, t('Description'));
+	}
+	variable_set('bloom_content_type_' . $type->type, TRUE);
+
+	// Add fields and instances / Check if field already exists.
+	// IMAGE field
+	if (!field_info_field('field_bloom_image')) {
+		$field = array(
+			'field_name' => 'field_bloom_image',
+			'type' => 'image',
+			// 'cardinality' => 1,
+		);
+		field_create_field($field);
+		$instance = array(
+			'field_name' => 'field_bloom_image',
+			'entity_type' => 'node',
+			'bundle' => 'bloom',
+			'label' => t('Bloom Image'),
+			'description' => t('Image for Bloom Event.'),
+			'widget' => array(
+				'type' => 'image',
+				'weight' => 10,
+			),
+		);
+		field_create_instance($instance);
+	}
+
+	// DATE field
+	if (!field_info_field('field_bloom_date')) {
+		$field = array(
+			'field_name' => 'field_bloom_date',
+			'type' => 'date',
+			// 'cardinality' => 1,
+		);
+		field_create_field($field);
+		$instance = array(
+			'field_name' => 'field_bloom_date',
+			'entity_type' => 'node',
+			'bundle' => 'bloom',
+			'label' => t('Bloom Date'),
+			'description' => t('Date of Bloom Event.'),
+			'widget' => array(
+				'type' => 'date',
+				'weight' => 11,
+			),
+		);
+		field_create_instance($instance);
+	}
+
+	// TYPE field
+	if (!field_info_field('field_bloom_type')) {
+		$field = array(
+			'field_name' => 'field_bloom_type',
+			'type' => 'taxonomy_term_reference',
+			// 'cardinality' => 1,
+			'settings' => array(
+    			'allowed_values' => array(
+      				array(
+        				'vocabulary' => 'bloom_type', // $vocabulary->machine_name,
+        				'parent' => 0
+      				),
+    			),
+  			),
+		);
+		field_create_field($field);
+		$instance = array(
+			'field_name' => 'field_bloom_type',
+			'entity_type' => 'node',
+			'bundle' => 'bloom',
+			'label' => t('Bloom Type'),
+			'description' => t('Type of Bloom Event.'),
+			// 'value' => variable_get('bloom_vid', '0'),
+			'widget' => array(
+				'type' => 'options_select', // 'taxonomy_term_reference',
+				'weight' => 12,
+			),
+		);
+		field_create_instance($instance);
+	}
+
+	// PUBLIC field
+	if (!field_info_field('field_bloom_public')) {
+		$field = array(
+			'field_name' => 'field_bloom_public',
+			'type' => 'list_boolean',
+			// 'cardinality' => 1,
+		);
+		field_create_field($field);
+		$instance = array(
+			'field_name' => 'field_bloom_public',
+			'entity_type' => 'node',
+			'bundle' => 'bloom',
+			'label' => t('Public'),
+			'description' => t('Authorized users can see all public events. Non-public events can be seen only by participants.'),
+			'widget' => array(
+				'type' => 'options_onoff',
+				'settings' => array(
+					'display_label' => TRUE,
+				),
+				'weight' => 13,
+			),
+		);
+		field_create_instance($instance);
+	}
+
+	// PARTICIPANTS field
+	if (!field_info_field('field_bloom_participants')) {
+		$field = array(
+			'field_name' => 'field_bloom_participants',
+			'type' => 'user_reference',
+			'cardinality' => 0,
+			// from references/user_reference.module
+			'settings' => array(
+				'referenceable_roles' => array(2), // 1 = anonymous user, 2 = authenticated user, 3 = administrator
+				'referenceable_status' => array(1), // 1 = Active, 0 = Blocked
+			),
+		);
+		field_create_field($field);
+		$instance = array(
+			'field_name' => 'field_bloom_participants',
+			'entity_type' => 'node',
+			'bundle' => 'bloom',
+			'label' => t('Bloom Participants'),
+			'description' => t('Participants of Bloom Event.'),
+			'widget' => array(
+				'type' => 'options_select',
+				'weight' => 14,
+			),
+		);
+		field_create_instance($instance);
+		field_update_instance($instance); // not sure it's needed
+	}
+
+}
+
+
+/**
+ * Create bloom vocabulary and initial term.
+ */
+function _bloom_init_bloom_vocabulary() {
+	// Create the Bloom vocabulary. If it exists, set bloom_vid variable.
+	$vocabularies = taxonomy_vocabulary_load_multiple(array(), array('machine_name' => 'bloom_type'));
+	$vocabulary = reset($vocabularies);
+	if (!$vocabulary) {
+		$vocabulary = new stdClass();
+		$vocabulary->name         = t('Bloom Type');
+		$vocabulary->machine_name = 'bloom_type';
+		$vocabulary->description  = t('Bloom Event Type.');
+		$vocabulary->weight       = '0';
+		$vocabulary->hierarchy    = '0';
+		$vocabulary->module       = 'taxonomy';
+	}
+	taxonomy_vocabulary_save($vocabulary);
+	variable_set('bloom_type_vid', $vocabulary->vid);
+
+	// Create the Bloom taxonomy terms.
+	$terms = array(
+		array(
+			'name' => 'created',
+			'vid' => $vocabulary->vid,
+			'weight' => 1,
+		),
+		array(
+			'name' => 'approved',
+			'vid' => $vocabulary->vid,
+			'weight' => 2,
+		),
+		array(
+			'name' => 'succeeded',
+			'vid' => $vocabulary->vid,
+			'weight' => 3,
+		),
+		array(
+			'name' => 'canceled',
+			'vid' => $vocabulary->vid,
+			'weight' => 4,
+		),
+	);
+	foreach ($terms as $term) {
+		taxonomy_term_save((object) $term);
+	}
+}
+

@@ -1,0 +1,68 @@
+<?php
+
+/**
+ * @file
+ * Pārbaudes darbiņš.
+ * Arturs Nīmanis, 2022. marts.
+ */
+
+/**
+ * Implements hook_permission().
+ */
+function bloom_permission() {
+  $perms = array(
+    'participant' => array(
+      'title' => t('View only related and public Events.'),
+      'restrict access' => TRUE,
+    ),
+  );
+  return $perms;
+}
+
+
+
+/**
+ * Implements hook_form_alter().
+ *
+ */
+function bloom_form_alter(&$form, &$form_state, $form_id) {
+	// if ($form_id == 'bloom_node_form') {
+		// p($form_id);
+	// }
+}
+
+
+/**
+ * Implements hook_query_alter().
+ *
+ */
+function bloom_query_alter(QueryAlterableInterface $query) {
+	// p($query);
+}
+
+
+/**
+ * Implements hook_node_view().
+ *
+ */
+function bloom_node_view($node, $view_mode) {
+	// $participants = field_get_items('node', $node, 'field_bloom_participants');
+	// p($participants);
+}
+
+
+/**
+ * Implements hook_node_access().
+ *
+ */
+function bloom_node_access($node, $op, $account) {
+}
+
+
+/**
+ * Developer Tools.
+ *
+ */
+function p($item, $title = '') {
+	drupal_set_message('<pre>' . (($title) ? '<h3>'. $title .'</h3>' : '') . print_r($item, TRUE) . '</pre>');
+}

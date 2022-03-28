@@ -1,0 +1,6 @@
+name = Bloom
+description = Manage Events.
+package = Events
+core = 7.x
+dependencies[] = taxonomy
+dependencies[] = views
