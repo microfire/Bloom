@@ -4,3 +4,4 @@ package = Events
 core = 7.x
 dependencies[] = taxonomy
 dependencies[] = views
+dependencies[] = references
